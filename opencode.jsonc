@@ -10,8 +10,8 @@
   // `server` 列为 unsupported（packages/core/src/config/normalize.ts:45），每次加载都会
   // 写一条 "omitted unsupported legacy setting" 告警，配置本身从未生效。
   // 需要指定服务器地址时走 CLI（`opencode --server <url>`）或 `opencode service`。
-  // MCP 段已移到机器本地文件 `opencode.json`（.gitignore）：biscotti 指向本机
-  // 127.0.0.1:8516，不该进公开仓库。discovery 同时加载 opencode.json 与 opencode.jsonc
+  // MCP 段已移到机器本地文件 `opencode.json`（.gitignore）：其中含本机专用服务的地址与
+  // 端口，不该进公开仓库。discovery 同时加载 opencode.json 与 opencode.jsonc
   // （packages/core/src/config/discovery.ts:12），两文件合并生效，行为不变。
   "permissions": [
     // v2 的未命中兜底是 ask（packages/core/src/permission.ts:86-95 的 `findLast(...) ?? { effect: "ask" }`）。
@@ -152,8 +152,8 @@
   // 之前显式写 800/20480 是为了省 token，但实际比默认更早截断——20KB 约等于 450-650 行代码，
   // 读一个 1000 行的源文件会被砍成两段。默认值更贴合"读代码多"的用法，且不再多一个要维护的旋钮。
   // 压缩（2026-10-22 起交给 billion-context 插件）：
-  //  - 插件自带本地代理与模型驱动的增量折叠（bili 的 compress 工具），是本仓库唯一的压缩路径；
-  //    原生压缩若同时开着会在 bili 折叠之上再重写历史，形成双压缩，故 auto 置 false。
+  //  - 插件自带本地代理与模型驱动的增量折叠（billion-context 的 compress 工具），是本仓库唯一的压缩路径；
+  //    原生压缩若同时开着会在 billion-context 折叠之上再重写历史，形成双压缩，故 auto 置 false。
   //  - 以下原生压缩键在 auto:false 后全部失效，已删除以免误读：
   //      reserved: 200000（= 1M 窗口的 20%，触发线 800k）、keep.tokens/preserve_recent_tokens: 30000
   //    若日后移除 billion-context，恢复上述四项再把 auto 改回 true。
@@ -161,7 +161,7 @@
   //    （2026-11-17 起：modelContextLimit 1000000 / maxContextLimit 60% / emergencyThresholdPercent 92%，
   //    即在 1M 分母下 600k 触发折叠、920k 紧急截断）。
   //    警告仍在：opencode-go 网关按路由限流，小路由约 128–148k 输入就回不可解析的 HTTP 400
-  //    （见下方 providers 注释）。长会话若被 400 卡住，先改 bili 的 modelContextLimit 分母/阈值，
+  //    （见下方 providers 注释）。长会话若被 400 卡住，先改 billion-context 的 modelContextLimit 分母/阈值，
   //    不必动这里 —— 下方 context: 1000000 只是模型声明。
   "compaction": {
     "auto": false,
@@ -188,12 +188,12 @@
   },
 
   // 模型上限（2026-10-19 移除 limit.input 覆盖；2026-10-22 起压缩由 billion-context 接管）：
-  //  此处 context 仅作 pin，防远程 catalog 漂移；它同时是插件上报给 bili 代理的窗口
-  //  （x-bili-plugin-context-window），即 bili 百分比阈值的分母，除非 bili 配置里显式写
+  //  此处 context 仅作 pin，防远程 catalog 漂移；它同时是插件上报给压缩代理的窗口
+  //  （x-<plugin>-context-window），即压缩代理百分比阈值的分母，除非插件配置里显式写
   //  compress.modelContextLimit 覆盖（那里的配置优先级更高）。
   //  注：opencode-go 网关按路由给不同上限（issues #50761 / #56296 / #52731）：小路由约 128–148k
   //     输入就回不可解析的 HTTP 400，novita 路由 582k–612k 开始 400，只有 deepseek 路由能到 ~1M。
-  //     按真实上下文能力配置、不为它压低窗口是此前的决定；若长会话仍被 400 卡住，改 bili 的
+  //     按真实上下文能力配置、不为它压低窗口是此前的决定；若长会话仍被 400 卡住，改 billion-context 的
   //     分母/阈值即可，不必动这里。
   "providers": {
     "opencode-go": {
