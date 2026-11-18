@@ -1,0 +1,221 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "research",
+  // 顶层 `update` / `share` / `lsp` 已删除：
+  //  - update:"notify" 就是默认值（packages/cli/src/services/updater.ts:168 的 `?? "notify"`）；
+  //  - share 只被解析/迁移，v2 已移除会话分享（packages/tui/src/config/keybind.ts:126）；
+  //  - lsp 只被解析，本版本没有 LSP 运行时（packages/core/src/file-mutation.ts:131 仍是 TODO）。
+  "formatter": true,
+  // 原 "server": { "attach": "http://127.0.0.1:4096" } 已删除：v2 的 normalize 把顶层
+  // `server` 列为 unsupported（packages/core/src/config/normalize.ts:45），每次加载都会
+  // 写一条 "omitted unsupported legacy setting" 告警，配置本身从未生效。
+  // 需要指定服务器地址时走 CLI（`opencode --server <url>`）或 `opencode service`。
+  // MCP 段已移到机器本地文件 `opencode.json`（.gitignore）：biscotti 指向本机
+  // 127.0.0.1:8516，不该进公开仓库。discovery 同时加载 opencode.json 与 opencode.jsonc
+  // （packages/core/src/config/discovery.ts:12），两文件合并生效，行为不变。
+  "permissions": [
+    // v2 的未命中兜底是 ask（packages/core/src/permission.ts:86-95 的 `findLast(...) ?? { effect: "ask" }`）。
+    // 这条 catch-all 恢复「默认放行」；解析是 last-match-wins，所以后面的 secrets deny /
+    // 高危 ask / question deny 仍然生效。catch-all 必须排第一。
+    { "action": "*", "resource": "*", "effect": "allow" },
+    // 原 `{ action: "doom_loop", ... }` 守卫已删除：v2 没有任何运行时会产生这个 action
+    // （grep 全仓只剩 v1 兼容校验 packages/core/src/v1/config/permission.ts:27、
+    // TUI 展示分支 packages/tui/src/util/permission.ts:131 和 demo），配了也不会命中。
+
+    // 账号凭据不进上下文：cookie / account_info.json / pending_submits.json
+    // 都在 local/secrets 下，读与改一律拒绝（qa 命令走 shell 自行读文件，不受此限）。
+    // read 侧：先 deny 环境变量文件与凭据，`.env.example` 是模板、必须放行，
+    // 所以那条 allow 必须排在 `*.env.*` deny 之后（同 action 也是 last-match-wins）。
+    { "action": "read", "resource": "*.env", "effect": "deny" },
+    { "action": "read", "resource": "*.env.*", "effect": "deny" },
+    { "action": "read", "resource": ".env", "effect": "deny" },
+    { "action": "read", "resource": ".envrc", "effect": "deny" },
+    { "action": "read", "resource": "*.envrc", "effect": "deny" },
+    { "action": "read", "resource": "*.env.example", "effect": "allow" },
+    { "action": "read", "resource": "local/secrets/**", "effect": "deny" },
+    { "action": "read", "resource": "**/local/secrets/**", "effect": "deny" },
+    { "action": "read", "resource": "**/secrets/**", "effect": "deny" },
+    // `**/secrets/**` 要求 secrets 前有 `/`，匹配不到顶层 `secrets/`，单独补一条。
+    { "action": "read", "resource": "secrets/**", "effect": "deny" },
+    { "action": "read", "resource": "*.pem", "effect": "deny" },
+    { "action": "read", "resource": "*.key", "effect": "deny" },
+    { "action": "read", "resource": "**/.ssh/**", "effect": "deny" },
+    { "action": "read", "resource": "**/id_rsa*", "effect": "deny" },
+    { "action": "read", "resource": "**/.aws/credentials", "effect": "deny" },
+    { "action": "read", "resource": "**/.config/gcloud/**", "effect": "deny" },
+    { "action": "read", "resource": "**/.netrc", "effect": "deny" },
+    { "action": "read", "resource": "**/.git-credentials", "effect": "deny" },
+    { "action": "read", "resource": "**/.npmrc", "effect": "deny" },
+    // edit 侧同口径（镜像上面的清单，不含 `.env.example` 放行行——模板允许读，不值得再开写）。
+    { "action": "edit", "resource": "*.env", "effect": "deny" },
+    { "action": "edit", "resource": "*.env.*", "effect": "deny" },
+    { "action": "edit", "resource": ".env", "effect": "deny" },
+    { "action": "edit", "resource": ".envrc", "effect": "deny" },
+    { "action": "edit", "resource": "*.envrc", "effect": "deny" },
+    { "action": "edit", "resource": "local/secrets/**", "effect": "deny" },
+    { "action": "edit", "resource": "**/local/secrets/**", "effect": "deny" },
+    { "action": "edit", "resource": "**/secrets/**", "effect": "deny" },
+    { "action": "edit", "resource": "secrets/**", "effect": "deny" },
+    { "action": "edit", "resource": "*.pem", "effect": "deny" },
+    { "action": "edit", "resource": "*.key", "effect": "deny" },
+    { "action": "edit", "resource": "**/.ssh/**", "effect": "deny" },
+    { "action": "edit", "resource": "**/id_rsa*", "effect": "deny" },
+    { "action": "edit", "resource": "**/.aws/credentials", "effect": "deny" },
+    { "action": "edit", "resource": "**/.config/gcloud/**", "effect": "deny" },
+    { "action": "edit", "resource": "**/.netrc", "effect": "deny" },
+    { "action": "edit", "resource": "**/.git-credentials", "effect": "deny" },
+    { "action": "edit", "resource": "**/.npmrc", "effect": "deny" },
+
+    // shell 侧同口径：命令文本命中凭据路径才拦，其余照旧默认放行。
+    // 动作名是 `shell`（packages/core/src/tool/plugin/shell.ts:21 `export const name = "shell"`，
+    // 权限断言在 :132-139 用同一个 name）。`bash` 只是 v1 拼写：v2 的 normalize 直接 decode
+    // 原生 `permissions` 数组、不改写 action（packages/core/src/config/normalize.ts:181），
+    // bash→shell 的改名只存在于 v1 迁移路径（packages/core/src/v1/config/migrate.ts:27-32），
+    // 所以本文件此前那些 action:"bash" 规则全是死规则（实测 `debug agents` 原样保留 31 条）。
+    // shell 这条 catch-all 必须排在最前，后面的 ask 才压得住它。
+    { "action": "shell", "resource": "*", "effect": "allow" },
+    // 凭据路径沿用 `*字符串*` 子串通配（匹配按 ^...$ 锚定在整条命令源上）。
+    { "action": "shell", "resource": "*local/secrets*", "effect": "ask" },
+    { "action": "shell", "resource": "*.ssh/*", "effect": "ask" },
+    { "action": "shell", "resource": "*id_rsa*", "effect": "ask" },
+    { "action": "shell", "resource": "*.aws/credentials*", "effect": "ask" },
+    { "action": "shell", "resource": "*.netrc*", "effect": "ask" },
+    { "action": "shell", "resource": "*.git-credentials*", "effect": "ask" },
+    { "action": "shell", "resource": "*.npmrc*", "effect": "ask" },
+
+    // Destructive / irreversible — confirm before running. Matching is
+    // anchored (^...$) over the parsed command source, so prefixes are
+    // spelled wide to also catch flag-reordered and path-prefixed forms.
+    // （原 Windows-only 规则 Remove-Item* / rd /s* / del /f* / format * 已删除：本机 macOS，永不命中。）
+    { "action": "shell", "resource": "rm *", "effect": "ask" },
+    { "action": "shell", "resource": "sudo *", "effect": "deny" },
+    { "action": "shell", "resource": "shutdown*", "effect": "deny" },
+    { "action": "shell", "resource": "reboot*", "effect": "deny" },
+    { "action": "shell", "resource": "mkfs*", "effect": "deny" },
+    { "action": "shell", "resource": "dd *", "effect": "deny" },
+    { "action": "shell", "resource": "diskutil *", "effect": "deny" },
+    { "action": "shell", "resource": "chmod -R*", "effect": "ask" },
+    { "action": "shell", "resource": "chown -R*", "effect": "ask" },
+    // 覆盖/清空类：`mv` 覆盖已有文件、`truncate` 清零、`find -delete` 批量删。
+    { "action": "shell", "resource": "mv *", "effect": "ask" },
+    { "action": "shell", "resource": "truncate *", "effect": "ask" },
+    { "action": "shell", "resource": "find *-delete*", "effect": "ask" },
+
+    // git: worktree / history destroying
+    { "action": "shell", "resource": "git push --force*", "effect": "ask" },
+    { "action": "shell", "resource": "git push -f *", "effect": "ask" },
+    { "action": "shell", "resource": "git reset --hard*", "effect": "ask" },
+    { "action": "shell", "resource": "git clean -fd*", "effect": "ask" },
+    { "action": "shell", "resource": "git checkout .*", "effect": "ask" },
+    { "action": "shell", "resource": "git checkout --*", "effect": "ask" },
+    { "action": "shell", "resource": "git branch -D*", "effect": "ask" },
+    { "action": "shell", "resource": "git stash clear*", "effect": "ask" },
+    { "action": "shell", "resource": "git stash drop*", "effect": "ask" },
+    { "action": "shell", "resource": "git add -A*", "effect": "ask" },
+    { "action": "shell", "resource": "git add --all*", "effect": "ask" },
+    { "action": "shell", "resource": "git filter-branch*", "effect": "ask" },
+    { "action": "shell", "resource": "git commit --amend*", "effect": "ask" },
+    // `git -C <path> ...` 形式整条命令以 `git -C` 开头，上面的规则锚不住，补齐三条。
+    { "action": "shell", "resource": "git -C * reset --hard*", "effect": "ask" },
+    { "action": "shell", "resource": "git -C * clean -fd*", "effect": "ask" },
+    { "action": "shell", "resource": "git -C * checkout .*", "effect": "ask" },
+
+    // remote-destructive / publishing
+    { "action": "shell", "resource": "gh repo delete*", "effect": "deny" },
+    { "action": "shell", "resource": "gh pr close*", "effect": "ask" },
+    { "action": "shell", "resource": "npm publish*", "effect": "deny" },
+
+    // 原 `{ action: "skill", resource: "*", effect: "allow" }` 已删除：它会以 last-match-wins
+    // 压掉每个 agent 自己 frontmatter 里的 skill 规则（包括 `skill:* deny`），等于把整份
+    // <available_skills> 清单塞进所有请求（30 条 ≈ 11.8KB ≈ 3.3K tokens/次）。
+    // 现在 skill 权限只由 agent 级规则决定（清单过滤见 packages/core/src/skill.ts:33）。
+    // 用户明确选择保留 external_directory 的 allow。
+    { "action": "external_directory", "resource": "*", "effect": "allow" },
+    // 用户在回复里手打回答，不用交互式提问工具：选项以编号列表直接写在回复文本中。
+    // 这条必须留在数组最后。
+    { "action": "question", "resource": "*", "effect": "deny" },
+  ],
+  "plugins": [
+    "@magpie-community/opencode-opendesign-auth",
+    // 不 pin 版本：裸名按 latest 解析（packages/util/src/npm.ts:75 把 raw==name 映射成 "latest"，
+    // 且 mutable=true 会在每次启动重新校验）。升级只需重启，不必改配置。
+    "billion-context"
+  ],
+  "references": {
+    "opencode-docs": {
+      "repository": "anomalyco/opencode",
+      "branch": "dev",
+      "description": "Official opencode docs, schema, and configuration examples",
+    },
+  },
+  // tool_output 用默认（2000 行 / 51200 字节，packages/core/src/tool-output.ts:13-14）：
+  // 之前显式写 800/20480 是为了省 token，但实际比默认更早截断——20KB 约等于 450-650 行代码，
+  // 读一个 1000 行的源文件会被砍成两段。默认值更贴合"读代码多"的用法，且不再多一个要维护的旋钮。
+  // 压缩（2026-10-22 起交给 billion-context 插件）：
+  //  - 插件自带本地代理与模型驱动的增量折叠（bili 的 compress 工具），是本仓库唯一的压缩路径；
+  //    原生压缩若同时开着会在 bili 折叠之上再重写历史，形成双压缩，故 auto 置 false。
+  //  - 以下原生压缩键在 auto:false 后全部失效，已删除以免误读：
+  //      reserved: 200000（= 1M 窗口的 20%，触发线 800k）、keep.tokens/preserve_recent_tokens: 30000
+  //    若日后移除 billion-context，恢复上述四项再把 auto 改回 true。
+  //  - 阈值由 ~/.config/billion-context/billion-context.json 的 compress 块控制
+  //    （2026-11-17 起：modelContextLimit 1000000 / maxContextLimit 60% / emergencyThresholdPercent 92%，
+  //    即在 1M 分母下 600k 触发折叠、920k 紧急截断）。
+  //    警告仍在：opencode-go 网关按路由限流，小路由约 128–148k 输入就回不可解析的 HTTP 400
+  //    （见下方 providers 注释）。长会话若被 400 卡住，先改 bili 的 modelContextLimit 分母/阈值，
+  //    不必动这里 —— 下方 context: 1000000 只是模型声明。
+  "compaction": {
+    "auto": false,
+  },
+
+  // 单次性隐藏 agent（title / summary / compaction）—— 它们在每次「生成标题 / 摘要」请求里
+  // 也要付一遍 <available_skills> 清单的钱（当时 30 条 ≈ 11.8KB ≈ 3.3K tokens）。
+  // 清单按合并 ruleset 过滤，只要不是 deny 就会列出（packages/core/src/skill.ts:33），
+  // 而内置 title/summary/compaction 只 deny `skill/browser`，所以这里必须显式写 `skill:* deny`。
+  // 内联 agent 的 permissions 追加在内置规则与全局规则之后，按 last-match-wins 生效。
+  // compaction 已由 billion-context 接管（auto:false），一并写上只为手动压缩时不浪费。
+  "agents": {
+    "title": { "permissions": [{ "action": "skill", "resource": "*", "effect": "deny" }] },
+    "summary": { "permissions": [{ "action": "skill", "resource": "*", "effect": "deny" }] },
+    "compaction": { "permissions": [{ "action": "skill", "resource": "*", "effect": "deny" }] },
+  },
+
+  // 二级委派：默认 depth=1（packages/core/src/tool/plugin/subagent.ts 里 `?? 1`），
+  // 而本地 orchestrator → light-orchestrator → oracle/reviewer 是两级：
+  // 默认值下第二级会被 "Subagent depth limit reached" 直接拒掉，
+  // /simplify 与 /review 这两条命令链依赖它。放到 2 即修复这条断链。
+  "experimental": {
+    "subagent_depth": 2,
+  },
+
+  // 模型上限（2026-10-19 移除 limit.input 覆盖；2026-10-22 起压缩由 billion-context 接管）：
+  //  此处 context 仅作 pin，防远程 catalog 漂移；它同时是插件上报给 bili 代理的窗口
+  //  （x-bili-plugin-context-window），即 bili 百分比阈值的分母，除非 bili 配置里显式写
+  //  compress.modelContextLimit 覆盖（那里的配置优先级更高）。
+  //  注：opencode-go 网关按路由给不同上限（issues #50761 / #56296 / #52731）：小路由约 128–148k
+  //     输入就回不可解析的 HTTP 400，novita 路由 582k–612k 开始 400，只有 deepseek 路由能到 ~1M。
+  //     按真实上下文能力配置、不为它压低窗口是此前的决定；若长会话仍被 400 卡住，改 bili 的
+  //     分母/阈值即可，不必动这里。
+  "providers": {
+    "opencode-go": {
+      "models": {
+        "deepseek-v4.1-flash": {
+          "limit": { "context": 1000000 },
+        },
+      },
+    },
+  },
+  // 图片体积上限（图片在上传前按 1600px / 2MB 缩放）。
+  // 键名必须是 v2 原生的 `media`：本机 opencode 2.3.0 的 schema 只有 media
+  // （packages/schema/src/config.ts:79，legacy 单数 `attachment` 由 normalize 迁移），
+  // 此前写的 `attachments` 既不是原生键也不在兼容表里，会被静默丢弃 —— 即缩放从未生效。
+  "media": {
+    "image": {
+      "auto_resize": true,
+      "max_width": 1600,
+      "max_height": 1600,
+      "max_base64_bytes": 2097152,
+    },
+  },
+  // `commands` 段整块删除（2026-11-17）：17 条斜杠命令里有 5 条引用了不存在的 skill，
+  // 其余也全部只是"绑 agent + 绑 skill"的快捷方式。等 agents/skills 设计定稿后再决定是否重建。
+}

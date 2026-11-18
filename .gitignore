@@ -1,0 +1,16 @@
+# runtime state written into the config dir by opencode itself
+service.json
+lsp-install-decisions.json
+# credentials / secrets
+auth.json
+.env
+.env.*
+# regenerable
+node_modules/
+# local residue
+.DS_Store
+*.log
+*.bak-*
+
+# machine-local config, merged with opencode.jsonc by discovery
+opencode.json
